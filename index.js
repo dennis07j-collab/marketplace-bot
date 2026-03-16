@@ -7,35 +7,106 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SHEETS_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL;
 
-// Memoria temporal de conversaciones
 const conversaciones = {};
 
 const ESTADOS = {
   INICIO: "inicio",
-  ESPERANDO_UNIDADES: "esperando_unidades",
-  ESPERANDO_NOMBRE: "esperando_nombre",
+  ESPERANDO_PRODUCTO: "esperando_producto",
+  ESPERANDO_CANTIDAD: "esperando_cantidad",
+  ESPERANDO_ENTREGA: "esperando_entrega",
+  ESPERANDO_TELEFONO: "esperando_telefono",
   COMPLETADO: "completado",
 };
 
 // ============================================================
-// MENSAJES DEL BOT — edítalos como quieras
+// PRODUCTOS Y PRECIOS
+// ============================================================
+const PRODUCTOS = {
+  sobre: { nombre: "Sobre de Royal Honey", precio: 5.00, unidad: "sobre" },
+  caja:  { nombre: "Caja de Royal Honey", precio: 50.00, unidad: "caja", detalle: "12 sobres" },
+};
+
+const ENTREGA = {
+  costo: 4.95,
+  gratis: {
+    lugar: "Terminal Nuevo Amanecer Soyapango, Gasolinera Puma",
+    horario: "Lunes a Viernes de 8am a 5pm",
+  },
+};
+
+// ============================================================
+// MENSAJES DEL BOT
 // ============================================================
 const MENSAJES = {
   bienvenida: (nombre) =>
-    `¡Hola ${nombre}! 👋 Sí tenemos disponibilidad. ¿Cuántas unidades te interesan?`,
+    `¡Hola ${nombre}! 👋 Gracias por contactarnos. Tenemos disponible Royal Honey en dos presentaciones:\n\n` +
+    `🍯 *Sobre individual* — $5.00 c/u\n` +
+    `📦 *Caja completa* — $50.00 (12 sobres)\n\n` +
+    `¿Te interesa el sobre o la caja?`,
 
-  confirmarUnidades: (unidades) =>
-    `Perfecto, anotado: ${unidades} unidad${unidades > 1 ? "es" : ""}. ¿Me puedes dar tu nombre para coordinar contigo?`,
+  pedirCantidad: (tipo) => {
+    if (tipo === "sobre") {
+      return `¡Excelente elección! 🍯 Los sobres están a $5.00 c/u.\n¿Cuántos sobres te interesan?`;
+    } else {
+      return `¡Excelente elección! 📦 La caja tiene 12 sobres por $50.00.\n¿Cuántas cajas te interesan?`;
+    }
+  },
 
-  despedida: (nombre) =>
-    `¡Gracias ${nombre}! 😊 Revisamos tu solicitud y nos comunicamos contigo muy pronto.`,
+  mostrarTotal: (tipo, cantidad) => {
+    const prod = PRODUCTOS[tipo];
+    const subtotal = prod.precio * cantidad;
+    const totalConEntrega = subtotal + ENTREGA.costo;
+    return (
+      `Perfecto! Tu pedido sería:\n\n` +
+      `${cantidad} ${prod.unidad}${cantidad > 1 ? "s" : ""} de Royal Honey${tipo === "caja" ? ` (${prod.detalle} c/u)` : ""}\n` +
+      `💰 Subtotal: $${subtotal.toFixed(2)}\n\n` +
+      `📦 *Opciones de entrega:*\n\n` +
+      `1️⃣ *Entrega a domicilio* — $${ENTREGA.costo} adicionales\n` +
+      `   Total: $${totalConEntrega.toFixed(2)}\n` +
+      `   (Cobertura todo San Salvador)\n\n` +
+      `2️⃣ *Punto de entrega gratis* 🆓\n` +
+      `   ${ENTREGA.gratis.lugar}\n` +
+      `   🕐 ${ENTREGA.gratis.horario}\n\n` +
+      `¿Prefieres entrega a domicilio o punto de entrega gratis?`
+    );
+  },
 
-  noEntendi: () =>
-    `Disculpa, no entendí bien. ¿Cuántas unidades necesitas? Escribe solo el número, por ejemplo: 2`,
+  pedirTelefono: (tipo_entrega) => {
+    if (tipo_entrega === "domicilio") {
+      return `¡Perfecto! Para coordinar la entrega a domicilio, ¿me puedes dar tu número de teléfono o WhatsApp?`;
+    } else {
+      return `¡Perfecto! Para coordinar la entrega en el punto, ¿me puedes dar tu número de teléfono o WhatsApp?`;
+    }
+  },
+
+  despedida: (nombre, tipo, cantidad, entrega, telefono) => {
+    const prod = PRODUCTOS[tipo];
+    const subtotal = prod.precio * cantidad;
+    const total = entrega === "domicilio" ? subtotal + ENTREGA.costo : subtotal;
+    return (
+      `¡Gracias ${nombre}! 😊 Tu pedido está registrado:\n\n` +
+      `🍯 ${cantidad} ${prod.unidad}${cantidad > 1 ? "s" : ""} de Royal Honey\n` +
+      `💰 Total: $${total.toFixed(2)}${entrega === "domicilio" ? " (incluye envío)" : ""}\n` +
+      `📍 Entrega: ${entrega === "domicilio" ? "A domicilio" : "Punto de retiro gratis"}\n` +
+      `📞 Tu número: ${telefono}\n\n` +
+      `Nos comunicamos contigo muy pronto para confirmar y coordinar. ¡Que tengas un excelente día! 🌟`
+    );
+  },
+
+  noEntendioProducto: () =>
+    `Disculpa, no entendí bien. ¿Te interesa el *sobre* ($5.00) o la *caja* ($50.00 con 12 sobres)?`,
+
+  noEntendioEntrega: () =>
+    `Disculpa, ¿prefieres *domicilio* (con costo de $${ENTREGA.costo}) o *punto de entrega gratis* en Terminal Nuevo Amanecer?`,
+
+  noEntendioNumero: () =>
+    `Disculpa, ¿cuántas unidades necesitas? Escribe solo el número, por ejemplo: 2`,
+
+  telefonoInvalido: () =>
+    `Disculpa, no reconocí ese número. Por favor escribe tu número de teléfono, por ejemplo: 7823-4521`,
 };
 // ============================================================
 
-// Verificación del webhook
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -48,7 +119,6 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-// Recibir mensajes
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.object !== "page") return res.sendStatus(404);
@@ -73,15 +143,17 @@ async function procesarMensaje(senderId, texto) {
   if (!conversaciones[senderId]) {
     conversaciones[senderId] = {
       estado: ESTADOS.INICIO,
-      nombre: null,
-      unidades: null,
       nombreFacebook: null,
+      tipo: null,
+      cantidad: null,
+      entrega: null,
+      telefono: null,
     };
   }
 
   const conv = conversaciones[senderId];
 
-  // Paso 1: primer mensaje — saludar y preguntar unidades
+  // Paso 1: bienvenida y mostrar opciones
   if (conv.estado === ESTADOS.INICIO) {
     try {
       const perfil = await obtenerPerfil(senderId);
@@ -90,55 +162,113 @@ async function procesarMensaje(senderId, texto) {
       conv.nombreFacebook = "Cliente";
     }
     await enviarMensaje(senderId, MENSAJES.bienvenida(conv.nombreFacebook));
-    conv.estado = ESTADOS.ESPERANDO_UNIDADES;
+    conv.estado = ESTADOS.ESPERANDO_PRODUCTO;
     return;
   }
 
-  // Paso 2: cliente responde cuántas unidades
-  if (conv.estado === ESTADOS.ESPERANDO_UNIDADES) {
-    const unidades = extraerNumero(texto);
-    if (!unidades) {
-      await enviarMensaje(senderId, MENSAJES.noEntendi());
+  // Paso 2: cliente elige sobre o caja
+  if (conv.estado === ESTADOS.ESPERANDO_PRODUCTO) {
+    const tipo = detectarProducto(texto);
+    if (!tipo) {
+      await enviarMensaje(senderId, MENSAJES.noEntendioProducto());
       return;
     }
-    conv.unidades = unidades;
-    await enviarMensaje(senderId, MENSAJES.confirmarUnidades(unidades));
-    conv.estado = ESTADOS.ESPERANDO_NOMBRE;
+    conv.tipo = tipo;
+    await enviarMensaje(senderId, MENSAJES.pedirCantidad(tipo));
+    conv.estado = ESTADOS.ESPERANDO_CANTIDAD;
     return;
   }
 
-  // Paso 3: cliente da su nombre
-  if (conv.estado === ESTADOS.ESPERANDO_NOMBRE) {
-    const nombreCliente = texto.length > 1 ? capitalizar(texto) : conv.nombreFacebook;
-    conv.nombre = nombreCliente;
+  // Paso 3: cliente da cantidad
+  if (conv.estado === ESTADOS.ESPERANDO_CANTIDAD) {
+    const cantidad = extraerNumero(texto);
+    if (!cantidad) {
+      await enviarMensaje(senderId, MENSAJES.noEntendioNumero());
+      return;
+    }
+    conv.cantidad = cantidad;
+    await enviarMensaje(senderId, MENSAJES.mostrarTotal(conv.tipo, cantidad));
+    conv.estado = ESTADOS.ESPERANDO_ENTREGA;
+    return;
+  }
 
-    await enviarMensaje(senderId, MENSAJES.despedida(nombreCliente));
+  // Paso 4: cliente elige tipo de entrega
+  if (conv.estado === ESTADOS.ESPERANDO_ENTREGA) {
+    const entrega = detectarEntrega(texto);
+    if (!entrega) {
+      await enviarMensaje(senderId, MENSAJES.noEntendioEntrega());
+      return;
+    }
+    conv.entrega = entrega;
+    await enviarMensaje(senderId, MENSAJES.pedirTelefono(entrega));
+    conv.estado = ESTADOS.ESPERANDO_TELEFONO;
+    return;
+  }
+
+  // Paso 5: cliente da teléfono
+  if (conv.estado === ESTADOS.ESPERANDO_TELEFONO) {
+    const telefono = extraerTelefono(texto);
+    if (!telefono) {
+      await enviarMensaje(senderId, MENSAJES.telefonoInvalido());
+      return;
+    }
+    conv.telefono = telefono;
+
+    await enviarMensaje(senderId, MENSAJES.despedida(
+      conv.nombreFacebook, conv.tipo, conv.cantidad, conv.entrega, telefono
+    ));
+
+    const prod = PRODUCTOS[conv.tipo];
+    const subtotal = prod.precio * conv.cantidad;
+    const total = conv.entrega === "domicilio" ? subtotal + ENTREGA.costo : subtotal;
 
     await guardarLead({
       fecha: new Date().toLocaleDateString("es-SV"),
-      nombre: nombreCliente,
-      nombre_facebook: conv.nombreFacebook,
+      nombre: conv.nombreFacebook,
       psid: senderId,
-      unidades: conv.unidades,
-      estado: "Nuevo lead",
-      notas: `Interesado en ${conv.unidades} unidad${conv.unidades > 1 ? "es" : ""}`,
+      producto: `${conv.cantidad} ${prod.unidad}${conv.cantidad > 1 ? "s" : ""} de Royal Honey`,
+      tipo: conv.tipo,
+      cantidad: conv.cantidad,
+      entrega: conv.entrega === "domicilio" ? "Domicilio ($4.95)" : "Punto gratis (Terminal Nuevo Amanecer)",
+      total: `$${total.toFixed(2)}`,
+      telefono: telefono,
+      estado: "Nuevo pedido",
     });
 
-    console.log(`Lead guardado: ${nombreCliente} - ${conv.unidades} unidades`);
+    console.log(`Pedido: ${conv.nombreFacebook} - ${conv.cantidad} ${conv.tipo}(s) - ${conv.entrega} - ${telefono}`);
     conv.estado = ESTADOS.COMPLETADO;
-
-    // Reiniciar conversación después de 12 horas
     setTimeout(() => delete conversaciones[senderId], 12 * 60 * 60 * 1000);
     return;
   }
 
-  // Si ya completó el flujo
+  // Si ya completó
   if (conv.estado === ESTADOS.COMPLETADO) {
     await enviarMensaje(
       senderId,
-      "¡Hola de nuevo! Ya tenemos tu solicitud registrada. Pronto nos comunicamos contigo."
+      "¡Hola de nuevo! Ya tenemos tu pedido registrado. Pronto nos comunicamos contigo para coordinar. 😊"
     );
   }
+}
+
+// ---- Helpers ----
+
+function detectarProducto(texto) {
+  const lower = texto.toLowerCase();
+  if (lower.includes("caja") || lower.includes("2") && lower.includes("50")) return "caja";
+  if (lower.includes("sobre") || lower.includes("1") || lower.includes("individual")) return "sobre";
+  // Si escribe solo "1" o "2"
+  if (texto.trim() === "1") return "sobre";
+  if (texto.trim() === "2") return "caja";
+  return null;
+}
+
+function detectarEntrega(texto) {
+  const lower = texto.toLowerCase();
+  if (lower.includes("domicilio") || lower.includes("1") || lower.includes("envío") || lower.includes("envio") || lower.includes("casa")) return "domicilio";
+  if (lower.includes("gratis") || lower.includes("2") || lower.includes("punto") || lower.includes("terminal") || lower.includes("soyapango") || lower.includes("puma") || lower.includes("recoger") || lower.includes("retiro")) return "gratis";
+  if (texto.trim() === "1") return "domicilio";
+  if (texto.trim() === "2") return "gratis";
+  return null;
 }
 
 function extraerNumero(texto) {
@@ -155,9 +285,13 @@ function extraerNumero(texto) {
   return null;
 }
 
-function capitalizar(str) {
-  return str.toLowerCase().split(" ")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+function extraerTelefono(texto) {
+  const limpio = texto.replace(/[\s\-\+]/g, "");
+  const match = limpio.match(/(?:503)?([267]\d{7})/);
+  if (match) return match[1];
+  const digitos = limpio.replace(/[^0-9]/g, "");
+  if (digitos.length >= 8) return digitos.slice(-8);
+  return null;
 }
 
 async function obtenerPerfil(senderId) {
@@ -184,5 +318,5 @@ async function guardarLead(data) {
   }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Bot corriendo en puerto ${PORT}`));
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Bot Royal Honey corriendo en puerto ${PORT}`));
