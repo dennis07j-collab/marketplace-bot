@@ -315,7 +315,19 @@ async function enviarMensaje(recipientId, texto) {
 async function guardarLead(data) {
   if (!SHEETS_WEBHOOK_URL) return;
   try {
-    await axios.post(SHEETS_WEBHOOK_URL, data);
+    const params = new URLSearchParams({
+      fecha:    data.fecha    || "",
+      nombre:   data.nombre   || "",
+      producto: data.producto || "",
+      cantidad: String(data.cantidad || ""),
+      tipo:     data.tipo     || "",
+      entrega:  data.entrega  || "",
+      total:    data.total    || "",
+      telefono: data.telefono || "",
+      estado:   data.estado   || "Nuevo pedido",
+    });
+    await axios.get(SHEETS_WEBHOOK_URL + "?" + params.toString());
+    console.log("Lead guardado en Sheets correctamente");
   } catch (err) {
     console.error("Error guardando en Sheets:", err.message);
   }
@@ -323,3 +335,4 @@ async function guardarLead(data) {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Bot Royal Honey corriendo en puerto ${PORT}`));
+
