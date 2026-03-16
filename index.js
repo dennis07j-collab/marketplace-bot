@@ -286,11 +286,14 @@ function extraerNumero(texto) {
 }
 
 function extraerTelefono(texto) {
-  const limpio = texto.replace(/[\s\-\+]/g, "");
-  const match = limpio.match(/(?:503)?([267]\d{7})/);
-  if (match) return match[1];
+  // Limpiar espacios, guiones, signos
+  const limpio = texto.replace(/[\s\-\+\(\)]/g, "");
+  // Extraer solo dígitos
   const digitos = limpio.replace(/[^0-9]/g, "");
-  if (digitos.length >= 8) return digitos.slice(-8);
+  // Aceptar cualquier número de 8 dígitos (con o sin prefijo 503)
+  if (digitos.length === 11 && digitos.startsWith("503")) return digitos.slice(3);
+  if (digitos.length === 8) return digitos;
+  if (digitos.length > 8) return digitos.slice(-8);
   return null;
 }
 
