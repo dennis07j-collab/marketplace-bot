@@ -237,7 +237,7 @@ async function procesarMensaje(senderId, texto) {
 
     console.log(`Pedido: ${conv.nombreFacebook} - ${conv.cantidad} ${conv.tipo}(s) - ${conv.entrega} - ${telefono}`);
     conv.estado = ESTADOS.COMPLETADO;
-    setTimeout(() => delete conversaciones[senderId], 12 * 60 * 60 * 1000);
+    setTimeout(() => delete conversaciones[senderId], 1 * 60 * 60 * 1000);
     return;
   }
 
@@ -335,4 +335,3 @@ async function guardarLead(data) {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Bot Royal Honey corriendo en puerto ${PORT}`));
-
